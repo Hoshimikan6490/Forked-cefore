@@ -1,5 +1,8 @@
 [Github repository](https://github.com/cefore/cefore/)
 
+# このForkについて
+このフォークには、以下の変更が行われています。
+- cefnetdが`logs/`に通信ログを残す機能
 
 **NOTE**: Please visit [this page](https://github.com/cefore/cefore/tree/master/doc) for more detailed description of Cefore components, including instructions on configuring/using the daemon and tools. The following section only provides an overview and installation instructions.
 
