@@ -1,0 +1,8 @@
+{
+	"files.autoSave": "off",
+	"[*]": {
+		"editor.formatOnPaste": false,
+		"editor.formatOnSave": false,
+		"editor.formatOnType": false
+	}
+}
