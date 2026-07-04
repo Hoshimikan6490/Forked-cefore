@@ -47,6 +47,7 @@
 #endif //__APPLE
 
 #include <sys/ioctl.h>
+#include <cefore/cef_define.h>
 #include <stdarg.h>
 #include <time.h>
 
@@ -57,6 +58,7 @@
 #define	CefC_BufSiz_1KB			1024
 #define	CefC_BufSiz_2KB			2048
 #define	CefC_KeyIdSiz			CefC_KeyId_SIZ
+#define BUFSIZ_TIMESTR BUFSIZ_64
 
 //#define	_DEBUG_BABEL_
 
