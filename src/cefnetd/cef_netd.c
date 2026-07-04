@@ -47,6 +47,9 @@
 #endif //__APPLE
 
 #include <sys/ioctl.h>
+#include <cefore/cef_define.h>
+#include <stdarg.h>
+#include <time.h>
 
 #ifdef DEB_CCNINFO
 #include <ctype.h>
@@ -55,6 +58,7 @@
 #define	CefC_BufSiz_1KB			1024
 #define	CefC_BufSiz_2KB			2048
 #define	CefC_KeyIdSiz			CefC_KeyId_SIZ
+#define BUFSIZ_TIMESTR BUFSIZ_64
 
 //#define	_DEBUG_BABEL_
 
@@ -115,6 +119,131 @@ static uint64_t stat_rcv_size_cnt = 0;
 static uint64_t stat_rcv_size_sum = 0;
 static uint64_t stat_rcv_size_min = 65536;
 static uint64_t stat_rcv_size_max = 0;
+static FILE* cefnetd_audit_interest_fp = NULL;
+static FILE* cefnetd_audit_data_fp = NULL;
+
+static FILE*
+cefnetd_audit_open_file (
+	const char* path
+) {
+	FILE* fp;
+
+	fp = fopen (path, "a+");
+	if (fp == NULL) {
+		mkdir ("logs", 0777);
+		fp = fopen (path, "a+");
+	}
+	if (fp != NULL) {
+		chmod (path, 0666);
+	}
+
+	return fp;
+}
+
+static void
+cefnetd_audit_write_line (
+	FILE* fp,
+	const char* category,
+	const char* fmt,
+	...
+) {
+	va_list arg;
+	struct tm* timeptr;
+	time_t timer;
+	struct timeval t;
+	char time_str[BUFSIZ_TIMESTR];
+
+	if (fp == NULL) {
+		return;
+	}
+	va_start (arg, fmt);
+	timer = time (NULL);
+	timeptr = localtime (&timer);
+	strftime (time_str, sizeof (time_str), "%Y-%m-%d %H:%M:%S", timeptr);
+	gettimeofday (&t, NULL);
+	fprintf (fp, "%s."FMTLINT" [%s] ", time_str, t.tv_usec / 1000, category);
+	vfprintf (fp, fmt, arg);
+	fputc ('\n', fp);
+	fflush (fp);
+	va_end (arg);
+}
+
+int
+cefnetd_audit_log_init (
+	void
+) {
+	mkdir ("logs", 0777);
+	cefnetd_audit_interest_fp = cefnetd_audit_open_file ("logs/interest.txt");
+	cefnetd_audit_data_fp = cefnetd_audit_open_file ("logs/data.txt");
+	if (cefnetd_audit_interest_fp == NULL && cefnetd_audit_data_fp == NULL) {
+		return (-1);
+	}
+	return (0);
+}
+
+void
+cefnetd_audit_log_close (
+	void
+) {
+	if (cefnetd_audit_interest_fp != NULL) {
+		fclose (cefnetd_audit_interest_fp);
+		cefnetd_audit_interest_fp = NULL;
+	}
+	if (cefnetd_audit_data_fp != NULL) {
+		fclose (cefnetd_audit_data_fp);
+		cefnetd_audit_data_fp = NULL;
+	}
+}
+
+static void
+cefnetd_audit_name_to_uri (
+	CefT_CcnMsg_MsgBdy* pm,
+	char* uri,
+	size_t uri_siz
+) {
+	if (pm == NULL || uri == NULL || uri_siz == 0) {
+		return;
+	}
+	if (pm->name_len < CefC_NAME_MAXLEN) {
+		cef_frame_conversion_name_to_uri (pm->name, pm->name_len, uri);
+	} else {
+		snprintf (uri, uri_siz, "ccnx:/name_len=%u", pm->name_len);
+	}
+}
+
+static void
+cefnetd_audit_log_interest (
+	CefT_CcnMsg_MsgBdy* pm,
+	const char* user_id,
+	int peer_faceid
+) {
+	char uri[CefC_NAME_MAXLEN];
+
+	cefnetd_audit_name_to_uri (pm, uri, sizeof (uri));
+	cefnetd_audit_write_line (cefnetd_audit_interest_fp, "interest",
+		"user=%s face=%d name=%s chunk=%u type=%u",
+		(user_id && user_id[0]) ? user_id : "-",
+		peer_faceid,
+		uri,
+		(pm != NULL && pm->chunk_num_f) ? pm->chunk_num : 0,
+		(pm != NULL) ? pm->InterestType : 0);
+}
+
+static void
+cefnetd_audit_log_object (
+	CefT_CcnMsg_MsgBdy* pm,
+	int faceid
+) {
+	char uri[CefC_NAME_MAXLEN];
+
+	cefnetd_audit_name_to_uri (pm, uri, sizeof (uri));
+	cefnetd_audit_write_line (cefnetd_audit_data_fp, "data",
+		"dst_face=%d name=%s chunk=%u type=%u",
+		faceid,
+		uri,
+		(pm != NULL && pm->chunk_num_f) ? pm->chunk_num : 0,
+		(pm != NULL) ? pm->InterestType : 0);
+}
 
 static char root_user_name[CefC_Ctrl_User_Len] = {"root"};
 
@@ -3582,6 +3711,7 @@ cefnetd_incoming_interest_process (
 		hdl->stat_recv_interest++;
 		/* Count of Received Interest by type */
 		hdl->stat_recv_interest_types[pm.InterestType]++;
+		cefnetd_audit_log_interest (&pm, user_id, peer_faceid);
 
 		/* Obtains Face-ID(s) to forward the Interest */
 		if (fe) {
@@ -4094,6 +4224,8 @@ cefnetd_object_send_postprocess (
 	for (i = 0; i < num_faceid;i++) {
 		CefT_Down_Faces *dnface = &(pe->dnfaces);
 		uint16_t	faceid = faceids[i];
+
+		cefnetd_audit_log_object (pm, faceid);
 
 		while (dnface->next) {
 			dnface = dnface->next;
