@@ -117,6 +117,10 @@ int main (
 	}
 	cef_log_init2(file_path, 1 /* for CEFNETD */);
 	cef_log_fopen (port_num);
+	if (cefnetd_audit_log_init () < 0) {
+		cef_log_write (CefC_Log_Warn, "Failed to initialize audit log files under logs/.\n");
+	}
+	atexit (cefnetd_audit_log_close);
 #ifdef CefC_Debug
 	cef_dbg_init ("cefnetd", file_path, 1);
 #endif // CefC_Debug
